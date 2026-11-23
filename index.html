@@ -91,7 +91,7 @@ td.n,th.n{text-align:right}
 .dos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .cambio{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
 .cambio p{margin:0 0 6px}
-.acciones{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.acciones{flex-wrap:wrap;display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
 .modal ol{padding-left:20px;margin:8px 0}
 .modal li{margin:4px 0}
 #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(30px);background:#1d2733;color:#fff;padding:10px 16px;border-radius:12px;font-size:.92rem;opacity:0;pointer-events:none;transition:.25s;z-index:60;max-width:90vw;text-align:center}
@@ -464,10 +464,10 @@ function filasAus(p,d,hh){
 function abrirAusencia(){
   var f0=fechas().filter(function(f){return f>=hoyISO();})[0]||hoyISO();
   var pid=S.persona||D.personas[0].id;
-  abrirModal('<h2>Ausencia o cambio de persona</h2><p class="mut">Elige quién falta. La página sugiere un reemplazo para cada uno de sus turnos y cambia solo esos; el resto del rol no se mueve.</p>'+
+  abrirModal('<h2>Ausencia o cambio de persona</h2><p class="mut">Elige quién falta y las fechas. La página elige sola a alguien que esté libre ese día y le toque menos, y cambia solo esos turnos; el resto del rol no se mueve. Si quieres, puedes cambiar a quién antes de aplicar.</p>'+
    '<label>Quién falta<select id="a-p">'+D.personas.map(function(p){return '<option value="'+p.id+'"'+(p.id===pid?' selected':'')+'>'+esc(p.nombre)+'</option>';}).join('')+'</select></label>'+
    '<div class="dos"><label>Desde<input type="date" id="a-d" value="'+f0+'"></label><label>Hasta<input type="date" id="a-h" value="'+f0+'"></label></div>'+
-   '<div id="a-lista"></div><div class="acciones"><button class="sec" data-act="cerrar">Cancelar</button><button data-act="aplicar-aus">Aplicar</button></div>');
+   '<div id="a-lista"></div><div class="acciones"><button class="sec" data-act="cerrar">Cancelar</button><button data-act="aplicar-aus">Reemplazar automáticamente</button></div>');
   pintarAus();
 }
 function pintarAus(){
@@ -478,9 +478,9 @@ function pintarAus(){
   var h='';
   if(!filas.length)h='<p class="mut">No tiene turnos programados en esas fechas. Se anotará la ausencia para que no se le asigne en semanas nuevas.</p>';
   filas.forEach(function(r,i){
-    var sug=sugerencias(T,r.f,r.k),def=sug.length?sug[0].id:'';
+    var sug=sugerencias(T,r.f,r.k),lib=sug.filter(function(x){return x.libre;}),def=lib.length?lib[0].id:'';
     T.programacion[r.f][r.k]=def||null;
-    h+='<div class="cambio"><p><strong>'+esc(cap(fechaLarga(r.f)))+'</strong><br>'+SERV[SLOT[r.k].serv]+' · '+esc(SLOT[r.k].etiqueta)+'</p>'+selectorCambio(T,r.k,p,sug,def,'sel-'+i)+'</div>';
+    h+='<div class="cambio"><p><strong>'+esc(cap(fechaLarga(r.f)))+'</strong><br>'+SERV[SLOT[r.k].serv]+' · '+esc(SLOT[r.k].etiqueta)+'</p>'+selectorCambio(T,r.k,p,sug,def,'sel-'+i)+(def?'':'<p class="mut">Nadie libre ese día: quedaría sin asignar.</p>')+'</div>';
   });
   c.innerHTML=h;
 }
@@ -502,13 +502,17 @@ function aplicarAus(){
 function abrirCambio(f,k){
   var s=SLOT[k],actual=D.programacion[f][k];
   var sug=sugerencias(D,f,k).filter(function(x){return x.id!==actual;});
+  var auto=sug.filter(function(x){return x.libre;})[0];
   abrirModal('<h2>Cambiar turno</h2><p><strong>'+esc(cap(fechaLarga(f)))+'</strong><br>'+SERV[s.serv]+' · '+esc(s.etiqueta)+'<br><span class="mut">Ahora: '+(actual?esc(nom(actual)):'por asignar')+'</span></p>'+
    '<label>Quién pasa'+selectorCambio(D,k,actual,sug,'__','sel-slot')+'</label>'+
    '<label>Motivo (opcional)<input type="text" id="c-motivo" maxlength="80" placeholder="Ej. enfermo, de viaje…"></label>'+
-   '<div class="acciones"><button class="sec" data-act="cerrar">Cancelar</button><button data-act="aplicar-slot" data-f="'+f+'" data-k="'+k+'">Aplicar</button></div>');
+   '<div class="acciones"><button class="sec" data-act="cerrar">Cancelar</button>'+
+   (auto?'<button data-act="auto-slot" data-f="'+f+'" data-k="'+k+'" data-p="'+auto.id+'">Poner a '+esc(nom(auto.id))+' (automático)</button>':'')+
+   '<button class="sec" data-act="aplicar-slot" data-f="'+f+'" data-k="'+k+'">Aplicar la elegida</button></div>'+
+   (auto?'':'<p class="mut">Nadie está libre ese día para este turno; elige a mano.</p>'));
 }
-function aplicarSlot(f,k){
-  var v=$('#sel-slot').value;
+function aplicarSlot(f,k,auto){
+  var v=auto||$('#sel-slot').value;
   if(v==='__'){toast('Elige a quién');return;}
   D.registro=D.registro||[];
   D.registro.push({cuando:new Date().toISOString(),fecha:f,rubro:k,de:D.programacion[f][k],a:v||null,motivo:$('#c-motivo').value.trim()});
@@ -546,6 +550,7 @@ document.addEventListener('click',function(e){
   else if(a==='cerrar')cerrarModal();
   else if(a==='aplicar-aus')aplicarAus();
   else if(a==='aplicar-slot')aplicarSlot(b.dataset.f,b.dataset.k);
+  else if(a==='auto-slot')aplicarSlot(b.dataset.f,b.dataset.k,b.dataset.p);
   else if(a==='aplicar-gen'){
     var n=Number($('#g-n').value),nuevas=generarSemanas(D,n);
     guardarLocal();cerrarModal();S.mes=nuevas[0].slice(0,7);render();toast(n+' semanas generadas. Falta publicar.');
